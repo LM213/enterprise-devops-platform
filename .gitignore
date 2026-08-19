@@ -16,3 +16,4 @@ terraform.tfvars
 
 # Logs
 *.log
+kubernetes/secret.yaml
