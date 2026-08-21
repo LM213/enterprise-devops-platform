@@ -55,3 +55,7 @@ variable "node_max_size" {
   description = "Maximum number of worker nodes in the EKS managed node group"
   type        = number
 }
+variable "ecr_repository_name" {
+  description = "Name of the Amazon ECR repository"
+  type        = string
+}

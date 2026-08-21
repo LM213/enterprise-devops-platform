@@ -1,0 +1,154 @@
+pipeline {
+    agent any
+
+    environment {
+        AWS_REGION     = 'us-east-1'
+        EKS_CLUSTER    = 'dev-eks-cluster'
+        K8S_NAMESPACE  = 'dev'
+        ECR_REPOSITORY = 'enterprise-devops-app'
+        APP_NAME       = 'web-app'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                checkout scm
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                dir('application') {
+                    sh 'npm ci'
+                }
+            }
+        }
+
+        stage('Test') {
+            steps {
+                dir('application') {
+                    sh 'npm test'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                dir('application') {
+                    sh 'docker build -t ${ECR_REPOSITORY}:${BUILD_NUMBER} .'
+                }
+            }
+        }
+
+        stage('Trivy Scan') {
+            steps {
+                sh '''
+                    trivy image \
+                      --severity HIGH,CRITICAL \
+                      --exit-code 1 \
+                      ${ECR_REPOSITORY}:${BUILD_NUMBER}
+                '''
+            }
+        }
+
+        stage('ECR Login') {
+            steps {
+                sh '''
+                    AWS_ACCOUNT_ID=$(aws sts get-caller-identity \
+                      --query Account \
+                      --output text)
+
+                    aws ecr get-login-password \
+                      --region ${AWS_REGION} | \
+                    docker login \
+                      --username AWS \
+                      --password-stdin \
+                      ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com
+                '''
+            }
+        }
+
+        stage('Tag and Push Image') {
+            steps {
+                sh '''
+                    ECR_REPO=$(aws ecr describe-repositories \
+                      --repository-names ${ECR_REPOSITORY} \
+                      --region ${AWS_REGION} \
+                      --query 'repositories[0].repositoryUri' \
+                      --output text)
+
+                    docker tag \
+                      ${ECR_REPOSITORY}:${BUILD_NUMBER} \
+                      ${ECR_REPO}:${BUILD_NUMBER}
+
+                    docker push ${ECR_REPO}:${BUILD_NUMBER}
+                '''
+            }
+        }
+
+        stage('Deploy to EKS') {
+            steps {
+                sh '''
+                    aws eks update-kubeconfig \
+                      --region ${AWS_REGION} \
+                      --name ${EKS_CLUSTER}
+
+                    ECR_REPO=$(aws ecr describe-repositories \
+                      --repository-names ${ECR_REPOSITORY} \
+                      --region ${AWS_REGION} \
+                      --query 'repositories[0].repositoryUri' \
+                      --output text)
+
+                    kubectl set image \
+                      deployment/${APP_NAME} \
+                      ${APP_NAME}=${ECR_REPO}:${BUILD_NUMBER} \
+                      -n ${K8S_NAMESPACE}
+
+                    if ! kubectl rollout status \
+                      deployment/${APP_NAME} \
+                      -n ${K8S_NAMESPACE} \
+                      --timeout=180s; then
+
+                        echo "Deployment failed. Rolling back..."
+
+                        kubectl rollout undo \
+                          deployment/${APP_NAME} \
+                          -n ${K8S_NAMESPACE}
+
+                        exit 1
+                    fi
+                '''
+            }
+        }
+
+        stage('Health Check') {
+            steps {
+                sh '''
+                    SERVICE_URL=$(kubectl get svc ${APP_NAME} \
+                      -n ${K8S_NAMESPACE} \
+                      -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+
+                    curl \
+                      --fail \
+                      --retry 5 \
+                      --retry-delay 10 \
+                      http://${SERVICE_URL}
+                '''
+            }
+        }
+    }
+
+    post {
+        success {
+            echo "Pipeline completed successfully."
+        }
+
+        failure {
+            echo "Pipeline failed. Review the Jenkins logs."
+        }
+
+        always {
+            sh 'docker image prune -f'
+        }
+    }
+}

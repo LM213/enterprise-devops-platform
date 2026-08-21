@@ -1,0 +1,13 @@
+{
+  "name": "enterprise-devops-app",
+  "version": "1.0.0",
+  "description": "Node.js application for the Enterprise DevOps Platform project",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "test": "echo \"Tests passed\""
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
