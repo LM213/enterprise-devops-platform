@@ -27,3 +27,10 @@ module "ecr" {
   environment     = var.environment
   repository_name = var.ecr_repository_name
 }
+module "monitoring" {
+  source = "../../modules/monitoring"
+
+  environment      = var.environment
+  eks_cluster_name = var.cluster_name
+  alarm_email      = var.alarm_email
+}

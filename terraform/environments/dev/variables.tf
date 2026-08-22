@@ -59,3 +59,7 @@ variable "ecr_repository_name" {
   description = "Name of the Amazon ECR repository"
   type        = string
 }
+variable "alarm_email" {
+  description = "Email address used for CloudWatch alarm notifications"
+  type        = string
+}
