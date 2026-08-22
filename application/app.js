@@ -5,7 +5,7 @@ const port = process.env.PORT || 3000;
 
 app.get("/", (req, res) => {
   res.json({
-    message: "Enterprise DevOps Platform is running",
+    message: "Enterprise DevOps Platform deployment verified",
     environment: process.env.APP_ENV || "development"
   });
 });
